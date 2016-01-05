@@ -8,17 +8,17 @@ import (
 )
 
 func main() {
-	cpu_info()
-	host_info()
-	interface_info()
-	go_info()
+	cpuInfo()
+	hostInfo()
+	interfaceInfo()
+	goInfo()
 }
 
-func cpu_info() {
+func cpuInfo() {
 	fmt.Println("CPUs:", runtime.NumCPU())
 }
 
-func host_info() {
+func hostInfo() {
 	hostname, _ := os.Hostname()
 	fmt.Println("Hostname:", hostname)
 	fmt.Println("OS:", runtime.GOOS)
@@ -26,7 +26,7 @@ func host_info() {
 	fmt.Println("Temp dir:", os.TempDir())
 }
 
-func interface_info() {
+func interfaceInfo() {
 	interfaces, _ := net.Interfaces()
 	for _, inter := range interfaces {
 		if inter.Name != "lo" {
@@ -40,6 +40,6 @@ func interface_info() {
 	}
 }
 
-func go_info() {
+func goInfo() {
 	fmt.Println("Go version:", runtime.Version())
 }
