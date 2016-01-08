@@ -12,6 +12,7 @@ func main() {
 	hostInfo()
 	interfaceInfo()
 	goInfo()
+	userInfo()
 }
 
 func cpuInfo() {
@@ -42,4 +43,9 @@ func interfaceInfo() {
 
 func goInfo() {
 	fmt.Println("Go version:", runtime.Version())
+}
+
+func userInfo() {
+	fmt.Println("UID:", os.Getuid())
+	fmt.Println("GID", os.Getgid())
 }
