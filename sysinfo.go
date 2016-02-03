@@ -46,6 +46,8 @@ func goInfo() {
 }
 
 func userInfo() {
-	fmt.Println("UID:", os.Getuid())
-	fmt.Println("GID", os.Getgid())
+	if runtime.GOOS != "windows" {
+		fmt.Println("UID:", os.Getuid())
+		fmt.Println("GID", os.Getgid())
+	}
 }
