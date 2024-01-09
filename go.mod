@@ -1,3 +1,3 @@
 module github.com/mikemadden42/sysinfo
 
-go 1.17
+go 1.18
