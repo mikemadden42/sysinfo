@@ -1,53 +1,148 @@
+// Command sysinfo prints basic information about the host it runs on.
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"os/user"
 	"runtime"
 )
 
+// Interface describes a non-loopback network interface.
+type Interface struct {
+	Name         string   `json:"name"`
+	HardwareAddr string   `json:"hardware_addr,omitempty"`
+	Addrs        []string `json:"addrs,omitempty"`
+}
+
+// Info holds the collected system information.
+type Info struct {
+	CPUs       int         `json:"cpus"`
+	Hostname   string      `json:"hostname"`
+	OS         string      `json:"os"`
+	Arch       string      `json:"arch"`
+	TempDir    string      `json:"temp_dir"`
+	GoVersion  string      `json:"go_version"`
+	Username   string      `json:"username,omitempty"`
+	UID        string      `json:"uid,omitempty"`
+	GID        string      `json:"gid,omitempty"`
+	Interfaces []Interface `json:"interfaces"`
+}
+
 func main() {
-	cpuInfo()
-	hostInfo()
-	interfaceInfo()
-	goInfo()
-	userInfo()
+	jsonOut := flag.Bool("json", false, "print output as JSON")
+	flag.Parse()
+
+	info, errs := collect()
+	for _, err := range errs {
+		fmt.Fprintln(os.Stderr, "sysinfo:", err)
+	}
+
+	var err error
+	if *jsonOut {
+		err = writeJSON(os.Stdout, info)
+	} else {
+		err = writeText(os.Stdout, info)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "sysinfo:", err)
+		os.Exit(1)
+	}
 }
 
-func cpuInfo() {
-	fmt.Println("CPUs:", runtime.NumCPU())
-}
+// collect gathers system information. Partial results are returned
+// alongside any errors encountered.
+func collect() (Info, []error) {
+	var errs []error
+	info := Info{
+		CPUs:      runtime.NumCPU(),
+		OS:        runtime.GOOS,
+		Arch:      runtime.GOARCH,
+		TempDir:   os.TempDir(),
+		GoVersion: runtime.Version(),
+	}
 
-func hostInfo() {
-	hostname, _ := os.Hostname()
-	fmt.Println("Hostname:", hostname)
-	fmt.Println("OS:", runtime.GOOS)
-	fmt.Println("OS arch:", runtime.GOARCH)
-	fmt.Println("Temp dir:", os.TempDir())
-}
+	hostname, err := os.Hostname()
+	if err != nil {
+		errs = append(errs, fmt.Errorf("hostname: %w", err))
+	}
+	info.Hostname = hostname
 
-func interfaceInfo() {
-	interfaces, _ := net.Interfaces()
-	for _, inter := range interfaces {
-		if inter.Name != "lo" {
-			fmt.Println(inter.Name, inter.HardwareAddr)
+	if u, err := user.Current(); err != nil {
+		errs = append(errs, fmt.Errorf("user: %w", err))
+	} else {
+		info.Username = u.Username
+		info.UID = u.Uid
+		info.GID = u.Gid
+	}
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		errs = append(errs, fmt.Errorf("interfaces: %w", err))
+	}
+	info.Interfaces = make([]Interface, 0, len(ifaces))
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
 		}
-		if addrs, err := inter.Addrs(); err == nil {
-			for _, addr := range addrs {
-				fmt.Println(inter.Name, "->", addr)
+		i := Interface{Name: iface.Name}
+		if len(iface.HardwareAddr) > 0 {
+			i.HardwareAddr = iface.HardwareAddr.String()
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("addrs for %s: %w", iface.Name, err))
+		}
+		for _, addr := range addrs {
+			i.Addrs = append(i.Addrs, addr.String())
+		}
+		info.Interfaces = append(info.Interfaces, i)
+	}
+
+	return info, errs
+}
+
+func writeText(w io.Writer, info Info) error {
+	lines := []struct{ label, value string }{
+		{"CPUs", fmt.Sprint(info.CPUs)},
+		{"Hostname", info.Hostname},
+		{"OS", info.OS},
+		{"OS arch", info.Arch},
+		{"Temp dir", info.TempDir},
+		{"Go version", info.GoVersion},
+		{"User", info.Username},
+		{"UID", info.UID},
+		{"GID", info.GID},
+	}
+	for _, l := range lines {
+		if l.value == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "%s: %s\n", l.label, l.value); err != nil {
+			return err
+		}
+	}
+	for _, iface := range info.Interfaces {
+		if iface.HardwareAddr != "" {
+			if _, err := fmt.Fprintln(w, iface.Name, iface.HardwareAddr); err != nil {
+				return err
+			}
+		}
+		for _, addr := range iface.Addrs {
+			if _, err := fmt.Fprintln(w, iface.Name, "->", addr); err != nil {
+				return err
 			}
 		}
 	}
+	return nil
 }
 
-func goInfo() {
-	fmt.Println("Go version:", runtime.Version())
-}
-
-func userInfo() {
-	if runtime.GOOS != "windows" {
-		fmt.Println("UID:", os.Getuid())
-		fmt.Println("GID", os.Getgid())
-	}
+func writeJSON(w io.Writer, info Info) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(info)
 }
